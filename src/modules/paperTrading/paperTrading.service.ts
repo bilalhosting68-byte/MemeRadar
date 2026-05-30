@@ -105,6 +105,21 @@ export class PaperTradingService {
       reasons.push(`Max open positions reached: ${openPositions}/${env.MAX_OPEN_POSITIONS}`);
     }
 
+    if (env.REENTRY_COOLDOWN_MINUTES > 0) {
+      const closedAfter = new Date(Date.now() - env.REENTRY_COOLDOWN_MINUTES * 60_000);
+      const recentClosedPosition = await this.database.findRecentlyClosedPosition(
+        signal.tokenAddress,
+        signal.pairAddress,
+        closedAfter,
+      );
+
+      if (recentClosedPosition) {
+        reasons.push(
+          `Re-entry cooldown active for this token/pair: ${env.REENTRY_COOLDOWN_MINUTES} minutes`,
+        );
+      }
+    }
+
     return {
       passed: reasons.length === 0,
       reasons,
