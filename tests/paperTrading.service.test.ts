@@ -63,10 +63,17 @@ const makePosition = (overrides: Partial<PaperPosition> = {}): PaperPosition => 
   ...overrides,
 });
 
-const makeService = (options: { openPositions?: number; existingPosition?: PaperPosition | null } = {}) => {
+const makeService = (
+  options: {
+    openPositions?: number;
+    existingPosition?: PaperPosition | null;
+    recentClosedPosition?: PaperPosition | null;
+  } = {},
+) => {
   const database = {
     countOpenPositions: vi.fn().mockResolvedValue(options.openPositions ?? 0),
     findOpenPosition: vi.fn().mockResolvedValue(options.existingPosition ?? null),
+    findRecentlyClosedPosition: vi.fn().mockResolvedValue(options.recentClosedPosition ?? null),
     createPaperPosition: vi.fn(async (data: Partial<PaperPosition>) => makePosition(data)),
     updatePaperPosition: vi.fn(async (id: string, data: Partial<PaperPosition>) => makePosition({ id, ...data })),
     recordBotEvent: vi.fn().mockResolvedValue(undefined),
@@ -101,6 +108,20 @@ describe("PaperTradingService entry filters", () => {
     expect(decision.decision).toBe("OPENED");
     expect(decision.passedFilters).toBe(true);
     expect(decision.positionId).toBe("position-1");
+  });
+
+  it("skips a signal when the same token/pair is still in re-entry cooldown", async () => {
+    const recentClosedPosition = makePosition({
+      status: "CLOSED",
+      closeReason: "STOP_LOSS",
+      closedAt: new Date(),
+    });
+    const { service } = makeService({ recentClosedPosition });
+    const decision = await service.handleSignal(makeSignal(), riskLow);
+
+    expect(decision.decision).toBe("SKIPPED");
+    expect(decision.passedFilters).toBe(false);
+    expect(decision.reasons).toContain("Re-entry cooldown active for this token/pair: 60 minutes");
   });
 
   it("applies simulated buy slippage and buy fee on entry", async () => {
