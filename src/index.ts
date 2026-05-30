@@ -42,6 +42,7 @@ const main = async (): Promise<void> => {
       scanIntervalSeconds: env.SCAN_INTERVAL_SECONDS,
       positionUpdateIntervalSeconds: env.POSITION_UPDATE_INTERVAL_SECONDS,
       maxOpenPositions: env.MAX_OPEN_POSITIONS,
+      reentryCooldownMinutes: env.REENTRY_COOLDOWN_MINUTES,
       riskMaxAllowedLevel: env.RISK_MAX_ALLOWED_LEVEL,
       tradingMode: "PAPER_ONLY",
     },
