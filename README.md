@@ -14,7 +14,7 @@ Questa versione e una base modulare e professionale. Non e un trading bot reale.
 - Salvataggio su PostgreSQL tramite Prisma.
 - Paper trading realistico con slippage, fee, stop loss, take profit, trailing stop e max hold time.
 - Tracking metriche avanzate: posizioni totali, aperte, chiuse, winrate, PNL totale, PNL medio, biggest win, biggest loss, hold time medio, profit factor, drawdown virtuale massimo e PNL per close reason/risk level/market cap/liquidita.
-- Logging decisionale dettagliato per ogni token analizzato.
+- Logging decisionale compatto di default, con modalita dettagliata opzionale.
 - Retry, rate limit e backoff per DexScreener.
 - Alert Discord per avvio bot, nuovi segnali, aperture, chiusure e errori critici.
 
@@ -84,9 +84,17 @@ DEXSCREENER_PROFILE_MIN_REQUEST_INTERVAL_MS=1000
 DEXSCREENER_PAIR_MIN_REQUEST_INTERVAL_MS=250
 
 LOG_LEVEL=info
+SIGNAL_DECISION_LOG_MODE=summary
 ```
 
 `DISCORD_WEBHOOK_URL` puo restare vuoto: il bot funzionera comunque, saltando gli alert.
+
+`SIGNAL_DECISION_LOG_MODE` controlla quanto sono verbosi i log dello scanner:
+
+- `summary`: default consigliato, scrive un solo riassunto per ciclo scanner.
+- `opened`: riassunto per ciclo piu dettaglio solo sulle aperture.
+- `all`: dettaglio completo per ogni token, utile per debug ma genera log enormi.
+- `none`: disattiva i log decisionali dello scanner, lasciando errori e metriche.
 
 ## Avvio PostgreSQL con Docker
 
@@ -200,7 +208,7 @@ Ogni token analizzato produce una decisione persistita:
 - `OPENED`: posizione paper aperta;
 - `SKIPPED`: posizione non aperta.
 
-La tabella salva `tokenSignalId`, decisione, motivi, risk score, risk level, esito dei filtri e timestamp. Questo rende auditabile il comportamento del bot.
+La tabella salva `tokenSignalId`, decisione, motivi, risk score, risk level, esito dei filtri e timestamp. Questo rende auditabile il comportamento del bot anche quando i log sono compatti.
 
 ### `alerts`
 
