@@ -22,3 +22,4 @@ process.env.MAX_HOLD_MINUTES ??= "20";
 process.env.PRICE_STALE_MINUTES ??= "5";
 process.env.REENTRY_COOLDOWN_MINUTES ??= "60";
 process.env.RISK_MAX_ALLOWED_LEVEL ??= "MEDIUM";
+process.env.SIGNAL_DECISION_LOG_MODE ??= "summary";
