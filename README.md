@@ -13,9 +13,9 @@ Questa versione e una base modulare e professionale. Non e un trading bot reale.
 - Salvataggio di ogni decisione in `SignalDecision`: `OPENED` o `SKIPPED`.
 - Salvataggio su PostgreSQL tramite Prisma.
 - Paper trading realistico con slippage, fee, stop loss, take profit, trailing stop e max hold time.
-- Metriche avanzate: winrate, PNL totale/medio, biggest win/loss, hold time medio, profit factor, max drawdown virtuale e PNL per close reason/risk level/market cap/liquidita.
+- Tracking metriche avanzate: posizioni totali, aperte, chiuse, winrate, PNL totale, PNL medio, biggest win, biggest loss, hold time medio, profit factor, drawdown virtuale massimo e PNL per close reason/risk level/market cap/liquidita.
 - Logging decisionale dettagliato per ogni token analizzato.
-- Retry, rate limit separato e backoff per DexScreener.
+- Retry, rate limit e backoff per DexScreener.
 - Alert Discord per avvio bot, nuovi segnali, aperture, chiusure e errori critici.
 
 ## Cosa NON fa
@@ -36,11 +36,14 @@ Questa versione e una base modulare e professionale. Non e un trading bot reale.
 Richiede Node.js 20+, Docker e Docker Compose.
 
 ```bash
+cd MemeRadar
 npm install
 cp .env.example .env
 ```
 
 ## Configurazione `.env`
+
+Valori principali:
 
 ```env
 DATABASE_URL=postgresql://memeradar:memeradar@localhost:5432/memeradar?schema=public
@@ -50,24 +53,25 @@ SCAN_INTERVAL_SECONDS=15
 POSITION_UPDATE_INTERVAL_SECONDS=15
 METRICS_INTERVAL_MINUTES=5
 
-MIN_LIQUIDITY_USD=10000
-MIN_VOLUME_5M_USD=5000
-MIN_BUY_RATIO=0.6
+MIN_LIQUIDITY_USD=15000
+MIN_VOLUME_5M_USD=10000
+MIN_BUY_RATIO=0.65
 MIN_MARKET_CAP_USD=10000
 MAX_MARKET_CAP_USD=500000
 
 VIRTUAL_POSITION_SIZE_USD=10
-MAX_OPEN_POSITIONS=3
+MAX_OPEN_POSITIONS=2
 
 SIMULATED_BUY_SLIPPAGE_PERCENT=3
 SIMULATED_SELL_SLIPPAGE_PERCENT=5
 SIMULATED_FEE_PERCENT=1
 
-STOP_LOSS_PERCENT=25
+STOP_LOSS_PERCENT=18
 TAKE_PROFIT_PERCENT=60
-TRAILING_STOP_PERCENT=25
-MAX_HOLD_MINUTES=30
+TRAILING_STOP_PERCENT=18
+MAX_HOLD_MINUTES=20
 PRICE_STALE_MINUTES=5
+REENTRY_COOLDOWN_MINUTES=60
 
 RISK_MAX_ALLOWED_LEVEL=MEDIUM
 
@@ -84,11 +88,13 @@ LOG_LEVEL=info
 
 `DISCORD_WEBHOOK_URL` puo restare vuoto: il bot funzionera comunque, saltando gli alert.
 
-## Avvio PostgreSQL
+## Avvio PostgreSQL con Docker
 
 ```bash
 docker compose up -d
 ```
+
+Il database sara disponibile su `localhost:5432` con utente, password e database `memeradar`.
 
 ## Migrazioni Prisma
 
@@ -97,7 +103,15 @@ npm run prisma:generate
 npm run prisma:migrate -- --name init
 ```
 
+Per aprire Prisma Studio:
+
+```bash
+npm run prisma:studio
+```
+
 ## Avvio bot
+
+Sviluppo:
 
 ```bash
 npm run dev
@@ -118,7 +132,7 @@ npm run typecheck
 npm run build
 ```
 
-I test unitari coprono risk engine, filtri di ingresso, slippage e fee, calcolo PNL, stop loss, take profit, trailing stop, max hold, price stale, persistenza `SignalDecision`, profit factor e max drawdown.
+I test unitari coprono risk engine, filtri di ingresso del paper trading, slippage e fee, calcolo PNL, stop loss, take profit, trailing stop, max hold, price stale, persistenza `SignalDecision`, profit factor e max drawdown.
 
 ## Struttura File
 
@@ -136,7 +150,9 @@ src/modules/metrics
 
 ### `scanner`
 
-Trova nuovi token/pair, normalizza i dati in `TokenSignalInput`, ignora chain diverse da Solana e usa `tokenAddress + pairAddress` per evitare duplicati. Lo scanner decide solo sui nuovi segnali e non aggiorna le posizioni aperte.
+Contiene `ScannerService` e usa un adapter di discovery. Lo scanner fa polling periodico, recupera candidati Solana da DexScreener, normalizza i pair in `TokenSignalInput`, ignora chain diverse da Solana e usa `tokenAddress + pairAddress` per evitare duplicati.
+
+Lo scanner trova nuovi token/pair e prende una decisione iniziale. Non e responsabile di aggiornare le posizioni gia aperte.
 
 Endpoint DexScreener usati:
 
@@ -145,11 +161,11 @@ Endpoint DexScreener usati:
 - `GET /tokens/v1/solana/{tokenAddresses}`
 - `GET /latest/dex/pairs/solana/{pairAddress}`
 
-L'adapter DexScreener applica limiter separati: `token-profiles`/`token-boosts` usano `DEXSCREENER_PROFILE_MIN_REQUEST_INTERVAL_MS`, mentre `tokens`/`latest/dex/pairs` usano `DEXSCREENER_PAIR_MIN_REQUEST_INTERVAL_MS`. Restano attivi retry su `429` e `5xx`, rispetto di `Retry-After`, backoff esponenziale con jitter e timeout configurabile.
+L'adapter DexScreener applica limiter separati per endpoint: `token-profiles`/`token-boosts` usano `DEXSCREENER_PROFILE_MIN_REQUEST_INTERVAL_MS`, mentre `tokens`/`latest/dex/pairs` usano `DEXSCREENER_PAIR_MIN_REQUEST_INTERVAL_MS`. Restano attivi retry su `429` e `5xx`, rispetto di `Retry-After`, backoff esponenziale con jitter e timeout configurabile.
 
 ### `priceTracker`
 
-Aggiorna periodicamente le posizioni aperte usando `pairAddress` e `tokenAddress`, anche quando il token non riappare nello scanner.
+Aggiorna periodicamente le posizioni aperte usando `pairAddress` e `tokenAddress`. Questo separa il ciclo di vita della posizione dal ciclo di discovery: una posizione puo essere aggiornata anche se il token non riappare nello scanner.
 
 ### `risk`
 
@@ -160,36 +176,102 @@ Calcola uno score da 0 a 100:
 - `HIGH`: 61-80
 - `EXTREME`: 81-100
 
+Le penalita includono liquidita bassa, volume 5m basso, buy/sell ratio debole, market cap fuori range, token troppo nuovo, dati mancanti, prezzo mancante e pair address mancante.
+
 ### `paperTrading`
 
-Simula operazioni virtuali. Apre una posizione solo se il rischio e i filtri configurati sono accettabili. Applica slippage e fee in ingresso e uscita. Chiude per `STOP_LOSS`, `TAKE_PROFIT`, `TRAILING_STOP`, `MAX_HOLD` o `PRICE_STALE`.
+Simula operazioni virtuali. Apre una posizione solo se:
+
+- il rischio non e `EXTREME`;
+- il livello e entro `RISK_MAX_ALLOWED_LEVEL`;
+- liquidita, volume, buy ratio e market cap rispettano le soglie;
+- non e gia aperta una posizione sullo stesso token/pair;
+- il numero di posizioni aperte e sotto `MAX_OPEN_POSITIONS`;
+- lo stesso token/pair non e stato chiuso negli ultimi `REENTRY_COOLDOWN_MINUTES`.
+
+All'apertura applica slippage e fee simulate. Alla chiusura applica slippage e fee anche in uscita. Le chiusure possono avvenire per `STOP_LOSS`, `TAKE_PROFIT`, `TRAILING_STOP`, `MAX_HOLD` o `PRICE_STALE`.
+
+Il paper trading non dipende dallo scanner per aggiornare i prezzi. Riceve i segnali per decidere eventuali aperture e riceve dal `priceTracker` i prezzi aggiornati delle posizioni aperte.
 
 ### `SignalDecision`
 
 Ogni token analizzato produce una decisione persistita:
 
-- `OPENED`: posizione paper aperta.
+- `OPENED`: posizione paper aperta;
 - `SKIPPED`: posizione non aperta.
+
+La tabella salva `tokenSignalId`, decisione, motivi, risk score, risk level, esito dei filtri e timestamp. Questo rende auditabile il comportamento del bot.
 
 ### `alerts`
 
-Alert Discord principali:
+Invia messaggi Discord tramite webhook. Se il webhook non e configurato, gli alert vengono saltati senza fermare il bot.
 
-```text
-🟢 Bot Started
-🚨 New Meme Signal
-🟩 Paper Position Opened
-📈 Paper Position Closed
-🔴 Critical Error
-```
+### `storage`
+
+Espone Prisma tramite `DatabaseService` e centralizza operazioni su segnali, risk result, signal decision, paper position e bot event.
 
 ### `metrics`
 
-Stampa periodicamente metriche di paper trading: posizioni totali/aperta/chiuse, winrate, PNL, average hold time, profit factor, max drawdown virtuale e breakdown per close reason, risk level, market cap e liquidita.
+Stampa periodicamente nei log le metriche del paper trading:
 
-## Limiti MVP
+- total positions;
+- open positions;
+- closed positions;
+- winrate;
+- total virtual PNL;
+- average PNL;
+- biggest win;
+- biggest loss;
+- average hold time;
+- profit factor;
+- max drawdown virtuale;
+- PNL per close reason;
+- PNL per risk level;
+- PNL per market cap range;
+- PNL per liquidity range.
 
-DexScreener e utile per un MVP read-only, ma non e una fonte completa per scoprire tutti i nuovi token o pool in tempo reale. Per un radar piu completo serviranno fonti come Birdeye, Helius, Pump.fun, Raydium listener o WebSocket.
+## Come leggere gli alert Discord
+
+Nuovo segnale:
+
+```text
+🚨 New Meme Signal
+Token: SYMBOL
+Risk: MEDIUM - 48/100
+Liquidity: $...
+Volume 5m: $...
+Buy/Sell 5m: ...
+Market Cap: $...
+Action: Paper trade opened / skipped
+Link: DexScreener URL
+```
+
+Chiusura posizione:
+
+```text
+📈 Paper Position Closed
+Token: SYMBOL
+Entry: $...
+Exit: $...
+PNL: +...%
+Reason: TAKE_PROFIT / STOP_LOSS / MAX_HOLD / TRAILING_STOP
+```
+
+Altri alert:
+
+```text
+🟢 Bot Started
+🟩 Paper Position Opened
+🔴 Critical Error
+```
+
+## Limiti dell'MVP
+
+DexScreener e utile per un MVP read-only, ma non e una fonte completa per scoprire tutti i nuovi token o tutti i nuovi pool in tempo reale. Questa versione usa profili recenti e token boosted come candidati, poi interroga i pair associati. Alcuni launch possono non apparire o apparire in ritardo.
+
+Il price tracker riduce la dipendenza dallo scanner per le posizioni gia aperte, ma resta vincolato alla disponibilita e freschezza dei dati DexScreener.
+
+Per un radar piu completo serviranno fonti on-chain o API specializzate, ad esempio Birdeye, Helius, Pump.fun, Raydium listener o WebSocket.
 
 ## Roadmap futura
 
@@ -200,7 +282,7 @@ DexScreener e utile per un MVP read-only, ma non e una fonte completa per scopri
 - Aggiungere AI scoring.
 - Aggiungere wallet analytics.
 - Aggiungere backtesting.
-- Valutare trading reale solo dopo molti test, con massima cautela.
+- Valutare trading reale solo dopo molti test, con massima cautela, separazione dei permessi, limiti rigorosi e audit del codice.
 
 ## Safety
 
