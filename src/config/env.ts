@@ -46,6 +46,7 @@ const envSchema = z.object({
   DEXSCREENER_PAIR_MIN_REQUEST_INTERVAL_MS: z.coerce.number().int().min(0).default(250),
 
   LOG_LEVEL: z.string().min(1).default("info"),
+  SIGNAL_DECISION_LOG_MODE: z.enum(["summary", "opened", "all", "none"]).default("summary"),
 });
 
 const parsed = envSchema.safeParse(process.env);
