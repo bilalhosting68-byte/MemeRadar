@@ -4,6 +4,7 @@ import { z } from "zod";
 const positiveNumber = z.coerce.number().finite().positive();
 const nonNegativeNumber = z.coerce.number().finite().nonnegative();
 const positiveInteger = z.coerce.number().int().positive();
+const nonNegativeInteger = z.coerce.number().int().min(0);
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -14,24 +15,25 @@ const envSchema = z.object({
   POSITION_UPDATE_INTERVAL_SECONDS: positiveInteger.default(15),
   METRICS_INTERVAL_MINUTES: positiveInteger.default(5),
 
-  MIN_LIQUIDITY_USD: nonNegativeNumber.default(10_000),
-  MIN_VOLUME_5M_USD: nonNegativeNumber.default(5_000),
-  MIN_BUY_RATIO: z.coerce.number().finite().min(0).max(1).default(0.6),
+  MIN_LIQUIDITY_USD: nonNegativeNumber.default(15_000),
+  MIN_VOLUME_5M_USD: nonNegativeNumber.default(10_000),
+  MIN_BUY_RATIO: z.coerce.number().finite().min(0).max(1).default(0.65),
   MIN_MARKET_CAP_USD: nonNegativeNumber.default(10_000),
   MAX_MARKET_CAP_USD: positiveNumber.default(500_000),
 
   VIRTUAL_POSITION_SIZE_USD: positiveNumber.default(10),
-  MAX_OPEN_POSITIONS: positiveInteger.default(3),
+  MAX_OPEN_POSITIONS: positiveInteger.default(2),
 
   SIMULATED_BUY_SLIPPAGE_PERCENT: nonNegativeNumber.default(3),
   SIMULATED_SELL_SLIPPAGE_PERCENT: nonNegativeNumber.default(5),
   SIMULATED_FEE_PERCENT: nonNegativeNumber.default(1),
 
-  STOP_LOSS_PERCENT: positiveNumber.default(25),
+  STOP_LOSS_PERCENT: positiveNumber.default(18),
   TAKE_PROFIT_PERCENT: positiveNumber.default(60),
-  TRAILING_STOP_PERCENT: nonNegativeNumber.default(25),
-  MAX_HOLD_MINUTES: positiveInteger.default(30),
+  TRAILING_STOP_PERCENT: nonNegativeNumber.default(18),
+  MAX_HOLD_MINUTES: positiveInteger.default(20),
   PRICE_STALE_MINUTES: positiveInteger.default(5),
+  REENTRY_COOLDOWN_MINUTES: nonNegativeInteger.default(60),
 
   RISK_MAX_ALLOWED_LEVEL: z.enum(["LOW", "MEDIUM", "HIGH", "EXTREME"]).default("MEDIUM"),
 
