@@ -115,6 +115,26 @@ export class DatabaseService {
     });
   }
 
+  async findRecentlyClosedPosition(
+    tokenAddress: string,
+    pairAddress: string,
+    closedAfter: Date,
+  ): Promise<PaperPosition | null> {
+    return this.prisma.paperPosition.findFirst({
+      where: {
+        tokenAddress,
+        pairAddress,
+        status: "CLOSED",
+        closedAt: {
+          gte: closedAfter,
+        },
+      },
+      orderBy: {
+        closedAt: "desc",
+      },
+    });
+  }
+
   async getOpenPositions(): Promise<PaperPosition[]> {
     return this.prisma.paperPosition.findMany({
       where: { status: "OPEN" },
